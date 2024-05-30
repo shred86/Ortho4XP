@@ -74,14 +74,17 @@ and launch "python Ortho4XP_v130.py".
 OS X
 ----
 
-1) In a Terminal window, install Homebrew (brew.sh), a package manager
-/usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
+1) In a Terminal window, install the Homebrew package manager:
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
-2) Go to the Ortho4XP folder
+2) Install the required packages:
+brew install python@3.11 python-tk@3.11 gdal spatialindex p7zip proj
+
+3) Install the required Python dependencies:
+pip3.11 install numpy==1.26.4 Pillow==10.3.0 pyproj==3.6.1 requests==2.32.2 Rtree==1.2.0 shapely==2.0.4 scikit-fmm==2023.4.2
+
+4) Go to the Ortho4XP folder:
 cd /path/to/Ortho4XP
 
-3) Execute the install script (you may have to run "chmod +x ./install_mac.sh" first)
-./install_mac.sh
-
-4) Launch Ortho4XP
-python3 Ortho4XP_v130.py
+5) Launch Ortho4XP:
+python3.11 Ortho4XP_v130.py
