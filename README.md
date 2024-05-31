@@ -33,39 +33,23 @@ TODO :
 
 ## Installation
 
+[Download](https://github.com/oscarpilote/Ortho4XP/archive/refs/heads/master.zip) this repository and extract it to any preferred location on your computer and follow the instructions for your specific operation system below.
+
 ### Windows
 
 *Note: Window users should use Notepad++ or an equivalent editor to read and/or modify Ortho4XP related files. Notepad doesn't understand Linux line-ends and will create issues.*
 
-1) Download and install [Python 3.11.9](https://www.python.org/downloads/release/python-3119/). Make sure to that "pip" (package management system for Python)
-is installed made accessible from your PATH. This is not not selected by default during the installation process.
+1. Download and install [Python 3.11.9](https://www.python.org/downloads/release/python-3119/). Make sure to that "pip" (package management system for Python)
+is installed made accessible from your PATH. This is not selected by default during the Python installation process.
 
-2) Download the following packages from https://www.lfd.uci.edu/~gohlke/pythonlibs/
+2. From a Command window, install the required packages:
+```pip install -r requirements.txt```
 
-Pyproj, Numpy, Gdal, Shapely, Rtree, Pillow (or alternatively Pillow-SIMD)
+3. Go to the Ortho4XP folder:
+```cd /path/to/Ortho4XP```
 
-Pay attention to take the ones that correspond to the Python version which you picked
-at Step 1) and to your OS nbr of bits (32 or 64, I guess 64 in all but a few cases).
-As an example, if Python 3.7.*  was selected at Step 1) above and you
-have a 64bit windows, then you would choose these files that have -cp37- and _amd64 
-within their filename.   
-
-In order to use the build geotiff feature of the custom_zl map, you will need to 
-add the directory containing gdal_translate and gdalwarp (***/python**/lib/site-packages/osgeo/) 
-into your PATH variable.
-
-Finally, if you do not already have them : download and install the build tools for visual studio (2017):
-https://visualstudio.microsoft.com/fr/downloads/  
-
-3) From a command window launch successively 
-
-pip install --upgrade pip  [if this goes wrong you probably missed the last point in 1)]
-pip install requests
-pip install *******.whl [replacing ******** successively by each of the files downloaded at Step 2]
-
-You should be done. Open a command window in the Ortho4XP directory (freshly downloaded from Github)
-and launch "python Ortho4XP_v130.py".
-
+4. Launch Ortho4XP:
+```python3 Ortho4XP_v130.py```
 
 ### Linux 
 
@@ -97,7 +81,7 @@ and launch "python Ortho4XP_v130.py".
 
 *Note: Python module names may be different on other distributions.*
 
-3. Launch Ortho4XP:
+4. Launch Ortho4XP:
 ```python3 Ortho4XP_v130.py```
 
 ### macOS
