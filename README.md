@@ -33,23 +33,31 @@ TODO :
 
 ## Installation
 
-[Download](https://github.com/oscarpilote/Ortho4XP/archive/refs/heads/master.zip) this repository and extract it to any preferred location on your computer and follow the instructions for your specific operation system below.
+[Download](https://github.com/oscarpilote/Ortho4XP/archive/refs/heads/master.zip) this repository and extract it to a preferred location on your computer and follow the instructions for your operation system below.
 
 ### Windows
 
-*Note: Window users should use Notepad++ or an equivalent editor to read and/or modify Ortho4XP related files. Notepad doesn't understand Linux line-ends and will create issues.*
+1. Download and install [Python 3.11.9](https://www.python.org/downloads/release/python-3119/). Use the "Customize installation" option and make sure "pip" and "tcl/tk and IDLE" are selected on the Optional Features page.
 
-1. Download and install [Python 3.11.9](https://www.python.org/downloads/release/python-3119/). Make sure to that "pip" (package management system for Python)
-is installed made accessible from your PATH. This is not selected by default during the Python installation process.
-
-2. From a Command window, install the required packages:
-```pip install -r requirements.txt```
+2. From a Command Prompt window, install the required packages:
+```py -3.11 -m pip install -r requirements.txt```
 
 3. Go to the Ortho4XP folder:
 ```cd /path/to/Ortho4XP```
 
 4. Launch Ortho4XP:
-```python3 Ortho4XP_v130.py```
+```py -3.11 -m Ortho4XP_v130.py```
+
+#### (Optional) Install tools needed for using elevation data (custom_dem) other than the default:
+
+1. Download and install the latest [Microsoft Visual C++ Redistributable (Microsoft C and C++ (MSVC) runtime libraries)](https://aka.ms/vs/17/release/vc_redist.x86.exe). The link provided is specific for Windowws 64-bit (X86). If you need a different version, they can be found [here](https://learn.microsoft.com/en-US/cpp/windows/latest-supported-vc-redist?view=msvc-170#latest-microsoft-visual-c-redistributable-version).
+
+2. Download the [Geospatial library wheels for Python](https://github.com/cgohlke/geospatial-wheels/releases/download/v2024.2.18/GDAL-3.8.4-cp311-cp311-win_amd64.whl). The link provided is specific for Python 3.11 and Windows 64-bit (X86). If you need a different version, they can be found [here](https://github.com/cgohlke/geospatial-wheels/releases).
+
+3. Install GDAL (update the path below to the location of where you downloaded the file in step 2):
+```py -3.11 -m "/path_to_downloaded_file_in_step_2/GDAL-3.8.4-cp311-cp311-win_amd64.whl"```
+
+*Note: Window users should use Notepad++ or an equivalent editor to read and/or modify Ortho4XP related files. Notepad doesn't understand Linux line-ends and will create issues.*
 
 ### Linux 
 
@@ -75,8 +83,7 @@ is installed made accessible from your PATH. This is not selected by default dur
 2. Install the required packages:
 ```sudo pacman -S python python-pip python-requests python-numpy python-pyproj python-gdal python-shapely python-rtree python-pillow python-pmw p7zip freeglut```
 
-3. If some packages in step 2 are not available for your distro, you can use pip instead to install the missing Python packages. For example:
-
+3. If some packages in step 2 are not available for your distro, you can use pip instead to install the missing Python packages. For example: 
 ```pip install pyproj```
 
 *Note: Python module names may be different on other distributions.*
@@ -90,13 +97,24 @@ is installed made accessible from your PATH. This is not selected by default dur
 ```/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"```
 
 2. Install the required packages:
-```brew install python@3.11 python-tk@3.11 gdal spatialindex p7zip proj```
+```brew install python@3.11 python-tk@3.11 spatialindex p7zip proj```
 
 3. Install the required Python dependencies:
 ```pip3.11 install -r requirements.txt```
 
-4. Go to the Ortho4XP folder:
+5. Go to the Ortho4XP folder:
 ```cd /path/to/Ortho4XP```
 
-5. Launch Ortho4XP:
+6. Allow macOS to run Ortho4XP tools:
+```xattr -dr com.apple.quarantine ./Utils/mac/*```
+
+7. Launch Ortho4XP:
 ```python3.11 Ortho4XP_v130.py```
+
+#### (Optional) Install tools needed for using elevation data (custom_dem) other than the default:
+
+1. Install the required packages:
+```brew install gdal```
+
+2. Install the gdal Python package (only required if you plan to use elevation data other than the default):
+```pip3.11 install gdal==$(gdal-config --version)```
