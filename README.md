@@ -54,7 +54,7 @@ TODO :
 
 2. Download the [Geospatial library wheels for Python](https://github.com/cgohlke/geospatial-wheels/releases/download/v2024.2.18/GDAL-3.8.4-cp311-cp311-win_amd64.whl). The link provided is specific for Python 3.11 and Windows 64-bit (X86). If you need a different version, they can be found [here](https://github.com/cgohlke/geospatial-wheels/releases).
 
-3. Install GDAL (update the path below to the location of where you downloaded the file in step 2):
+3. Install GDAL (update the path to where you downloaded the file in step 2):
 ```py -3.11 -m "/path_to_downloaded_file_in_step_2/GDAL-3.8.4-cp311-cp311-win_amd64.whl"```
 
 *Note: Window users should use Notepad++ or an equivalent editor to read and/or modify Ortho4XP related files. Notepad doesn't understand Linux line-ends and will create issues.*
@@ -116,5 +116,5 @@ TODO :
 1. Install the required packages:
 ```brew install gdal```
 
-2. Install the gdal Python package (only required if you plan to use elevation data other than the default):
+2. Install the gdal Python package:
 ```pip3.11 install gdal==$(gdal-config --version)```
