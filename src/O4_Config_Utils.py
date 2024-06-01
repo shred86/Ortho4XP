@@ -113,6 +113,12 @@ a particular server.",
         "default": "",
         "hint": "The directory containing the sceneries with the overlays you would like to extract. You need to select the level of directory just _ABOVE_ Earth nav data.",
     },
+    "custom_overlay_src_alternate": {
+        "module": "OVL",
+        "type": str,
+        "default": "",
+        "hint": "If sceneries with overlays are not found in custom_overlay_src, set an alternate directory to search.",
+    },
     # Vector
     "apt_smoothing_pix": {
         "type": int,
@@ -366,9 +372,10 @@ list_app_vars = [
     "ovl_exclude_net",
     "custom_scenery_dir",
     "custom_overlay_src",
+    "custom_overlay_src_alternate"
 ]
-gui_app_vars_short = list_app_vars[:-2]
-gui_app_vars_long = list_app_vars[-2:]
+gui_app_vars_short = list_app_vars[:-3]
+gui_app_vars_long = list_app_vars[-3:]
 
 list_vector_vars = [
     "apt_smoothing_pix",

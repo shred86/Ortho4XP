@@ -13,6 +13,7 @@ ovl_exclude_net = []
 
 # the following is meant to be modified by the CFG module at run time
 custom_overlay_src = ""
+custom_overlay_src_alternate = ""
 
 if "dar" in sys.platform:
     unzip_cmd = "7z "
@@ -41,7 +42,13 @@ def build_overlay(lat, lon):
         custom_overlay_src,
         "Earth nav data",
         FNAMES.long_latlon(lat, lon) + ".dsf",
-    )
+        )
+    if not os.path.exists(file_to_sniff):
+        file_to_sniff = os.path.join(
+        custom_overlay_src_alternate,
+        "Earth nav data",
+        FNAMES.long_latlon(lat, lon) + ".dsf",
+        )
     if not os.path.exists(file_to_sniff):
         UI.exit_message_and_bottom_line(
             "   ERROR: file ",
