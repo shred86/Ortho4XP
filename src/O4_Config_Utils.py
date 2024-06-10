@@ -999,8 +999,8 @@ class Ortho4XP_Config(tk.Toplevel):
                     pass
         if not self.v_["zone_list"].get():
             self.v_["zone_list"].set(str(zone_list))
-        UI.vprint(0, f"Configuration file loaded for tile at {lat} {lon}")
         f.close()
+        UI.vprint(0, f"Configuration loaded for tile at {lat} {lon}")
 
     def write_tile_cfg(self):
         try:
@@ -1038,8 +1038,8 @@ class Ortho4XP_Config(tk.Toplevel):
                 f.write(var + "=" + str(tile_zones) + "\n")
             else:
                 f.write(var + "=" + self.v_[var].get() + "\n")
-        UI.vprint(1, f"Configuration file saved for tile at {lat} {lon}")
         f.close()
+        UI.vprint(1, f"Configuration saved for tile at {lat} {lon}")
         return
 
     def load_global_cfg(self):
@@ -1063,8 +1063,8 @@ class Ortho4XP_Config(tk.Toplevel):
                 self.v_[var].set(value)
             except:
                 pass
-        UI.vprint(1, "Global configuration loaded.")
         f.close()
+        UI.vprint(1, "Global configuration loaded.")
         return
 
     def write_global_cfg(self):
@@ -1077,9 +1077,9 @@ class Ortho4XP_Config(tk.Toplevel):
             for var in list_global_cfg:
                 f.write(var + "=" + self.v_[var].get() + "\n")
             f.close()
+            UI.vprint(1, "Global configuration saved.")
         except:
             UI.lvprint(1, "Could not write global config.")
-        UI.vprint(1, "Global configuration saved.")
         return
 
     def apply_changes(self):
