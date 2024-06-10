@@ -20,32 +20,21 @@ cfg_vars = {
         "type": int,
         "default": 1,
         "values": (0, 1, 2, 3),
-        "hint": 
-"Verbosity determines the amount of information about the whole process which \
-is printed on screen.  Critical errors, if any, are reported in all states as \
-well as in the Log. Values above 1 are probably only useful for for debug \
-purposes.",
+        "hint": "Verbosity determines the amount of information about the whole process which is printed on screen.  Critical errors, if any, are reported in all states as well as in the Log. Values above 1 are probably only useful for for debug purposes.",
     },
     "cleaning_level": {
         "module": "UI",
         "type": int,
         "default": 1,
         "values": (0, 1, 2, 3),
-        "hint": 
-"Determines which temporary files are removed. Level 3 erases everything \
-except the config and what is needed for X-Plane; Level 2 erases everything \
-except what is needed to redo the current step only; Level 1 allows you to \
-redo any prior step; Level 0 keeps every single file.",
+        "hint": "Determines which temporary files are removed. Level 3 erases everything except the config and what is needed for X-Plane; Level 2 erases everything except what is needed to redo the current step only; Level 1 allows you to redo any prior step; Level 0 keeps every single file.",
     },
     "overpass_server_choice": {
         "module": "OSM",
         "type": str,
         "default": "random",
         "values": ["random"] + sorted(OSM.overpass_servers.keys()),
-        "hint": 
-"The (country) of the Overpass OSM server used to grab vector data. It can be \
-modified on the fly (as all _Application_ variables) in case of problem with \
-a particular server.",
+        "hint": "The (country) of the Overpass OSM server used to grab vector data. It can be modified on the fly (as all _Application_ variables) in case of problem with a particular server.",
     },
     "skip_downloads": {
         "module": "TILE",
@@ -249,10 +238,7 @@ a particular server.",
     "distance_masks_too": {
         "type": bool,
         "default": False,
-        "hint": "This will additionally build distance to coastline masks that \
-are used in Step 3 in order to improve the bathymetric profile (otherwise too \
-low res) and avoid steep walls close to piers or rocks. Masks_zl should not be \
-too low to grab these details.",
+        "hint": "This will additionally build distance to coastline masks that are used in Step 3 in order to improve the bathymetric profile (otherwise too low res) and avoid steep walls close to piers or rocks. Masks_zl should not be too low to grab these details.",
     },
     "masks_use_DEM_too": {
         "type": bool,
@@ -291,22 +277,22 @@ too low to grab these details.",
         "hint": 'For layers of type "mask" in combined providers imageries, determines the extent (in meters) of the blur radius applied. This allows to smoothen some sea imageries where the wave or reflection pattern was too much present.',
     },
     "water_tech": {
-            "type": str,
-            "default": "XP11 + bathy",
-            "values" : ("XP12", "XP11 + bathy"),
-            "hint" : "Water tech type. XP12 uses a new (partly in construction) rendering tech, XP11 + bathy uses a more traditionnal blend. Both allows for 3D water."
+        "type": str,
+        "default": "XP11 + bathy",
+        "values": ("XP12", "XP11 + bathy"),
+        "hint": "Water tech type. XP12 uses a new (partly in construction) rendering tech, XP11 + bathy uses a more traditionnal blend. Both allows for 3D water.",
     },
-    #"add_low_res_sea_ovl": {
+    # "add_low_res_sea_ovl": {
     #    "type": bool,
     #    "default": False,
     #    "hint": "Will add an extra texture layer over the sea (with constant alpha channel given by ratio_water as for inland water), based on a low resolution imagery with global coverage. Masks with their full resolution imagery are still being used when present, the final render is a composite of both. The default imagery with code SEA can be changed as any other imagery defined in the Providers directory, it needs to have a max_zl defined and is used at its max_zl.",
-    #},
-    #"experimental_water": {
+    # },
+    # "experimental_water": {
     #    "type": int,
     #    "default": 0,
     #    "values": (0, 1, 2, 3),
     #    "hint": 'If non zero, replaces X-Plane water by a custom normal map over low res ortho-imagery (requires XP11 but turns water rendering more XP10 alike). The value 0 corresponds to legacy X-Plane water, 1 replaces it for inland water only, 2 over sea water only, and 3 over both. Values 2 and 3 should always be used in combination with "imprint_masks_to_dds".\n\nThis experimental feature has two strong downsides: 1) the waves are static rather dynamical (would require a plugin to update the normal_map as X-Plane does) and 2) the wave height is no longer weather dependent. On the other hand, waves might have less repetitive patterns and some blinking in water reflections might be improved too; users are welcome to improve the provided water_normal_map.dds (Gimp can be used to edit the mipmaps individually).',
-    #},
+    # },
     "ratio_water": {
         "type": float,
         "default": 0.25,
@@ -315,12 +301,12 @@ too low to grab these details.",
     "ratio_bathy": {
         "type": float,
         "default": 1.0,
-        "hint": 'Bathymetry multiplier for near shore vertices. In the range [0,1].'
+        "hint": "Bathymetry multiplier for near shore vertices. In the range [0,1].",
     },
     "normal_map_strength": {
         "type": float,
         "default": 1,
-        "hint": 'Orthophotos by essence already contain the part of the shading burned in (here by shading we mean the amount of reflected light in the camera direction as a function of the terrain slope, not the shadows). This option allows to tweak the normal coordinates of the mesh in the DSF to avoid "overshading", but it has side effects on the way X-Plane computes scenery shadows. Used to be 0.3 by default in earlier versions, the default is now 1 which means exact normals.},      ',
+        "hint": 'Orthophotos by essence already contain the part of the shading burned in (here by shading we mean the amount of reflected light in the camera direction as a function of the terrain slope, not the shadows). This option allows to tweak the normal coordinates of the mesh in the DSF to avoid "overshading", but it has side effects on the way X-Plane computes scenery shadows. Used to be 0.3 by default in earlier versions, the default is now 1 which means exact normals.',
     },
     "terrain_casts_shadows": {
         "type": bool,
@@ -342,7 +328,7 @@ too low to grab these details.",
     "custom_dem": {
         "type": str,
         "default": "",
-        "hint": "Path to an elevation data file to be used instead of the default Viewfinderpanoramas.org ones (J. de Ferranti). The raster must be in geopgraphical coordinates (EPSG:4326) but the extent need not match the tile boundary (requires Gdal). Regions of the tile that are not covered by the raster are mapped to zero altitude (can be useful for high resolution data over islands in particular).     ",
+        "hint": "Path to an elevation data file to be used instead of the default Viewfinderpanoramas.org ones (J. de Ferranti). The raster must be in geopgraphical coordinates (EPSG:4326) but the extent need not match the tile boundary (requires Gdal). Regions of the tile that are not covered by the raster are mapped to zero altitude (can be useful for high resolution data over islands in particular).",
     },
     "fill_nodata": {
         "type": bool,
@@ -413,8 +399,8 @@ list_dsf_vars = [
     "ratio_water",
     "overlay_lod",
     "sea_texture_blur",
-    #"add_low_res_sea_ovl",
-    #"experimental_water",
+    # "add_low_res_sea_ovl",
+    # "experimental_water",
     "normal_map_strength",
     "terrain_casts_shadows",
     "use_decal_on_terrain",
@@ -430,11 +416,7 @@ list_tile_vars = (
 )
 
 list_global_cfg = (
-    list_app_vars
-    + list_vector_vars
-    + list_mesh_vars
-    + list_mask_vars
-    + list_dsf_vars
+    list_app_vars + list_vector_vars + list_mesh_vars + list_mask_vars + list_dsf_vars
 )
 
 ################################################################################
@@ -1017,6 +999,7 @@ class Ortho4XP_Config(tk.Toplevel):
                     pass
         if not self.v_["zone_list"].get():
             self.v_["zone_list"].set(str(zone_list))
+        UI.vprint(0, f"Configuration file loaded for tile at {lat} {lon}")
         f.close()
 
     def write_tile_cfg(self):
@@ -1039,9 +1022,23 @@ class Ortho4XP_Config(tk.Toplevel):
         except:
             self.popup("ERROR", "Cannot write into " + str(build_dir))
             return 0
-        self.v_["zone_list"].set(str(eval("zone_list")))
+
+        self.v_["zone_list"].set(str(eval("zone_list"))) # convert tk.StringVar to str
+        zone_list = eval(self.v_["zone_list"].get()) # convert str to list
+        tile_zones = []
+
+        for zone in zone_list:
+            _zone_list = [int(coord) for coord in zone[0]]
+            _zone_list = set(_zone_list)
+            if lat in _zone_list and lon+1 in _zone_list:
+                tile_zones.append(zone)
+
         for var in list_tile_vars:
-            f.write(var + "=" + self.v_[var].get() + "\n")
+            if var == "zone_list":
+                f.write(var + "=" + str(tile_zones) + "\n")
+            else:
+                f.write(var + "=" + self.v_[var].get() + "\n")
+        UI.vprint(1, f"Configuration file saved for tile at {lat} {lon}")
         f.close()
         return
 
@@ -1066,6 +1063,7 @@ class Ortho4XP_Config(tk.Toplevel):
                 self.v_[var].set(value)
             except:
                 pass
+        UI.vprint(1, "Global configuration loaded.")
         f.close()
         return
 
@@ -1081,6 +1079,7 @@ class Ortho4XP_Config(tk.Toplevel):
             f.close()
         except:
             UI.lvprint(1, "Could not write global config.")
+        UI.vprint(1, "Global configuration saved.")
         return
 
     def apply_changes(self):
@@ -1127,6 +1126,7 @@ class Ortho4XP_Config(tk.Toplevel):
                 + "\n* ".join(errors)
             )
             self.popup("ERROR", error_text)
+        UI.vprint(1, "Configuration settings applied.")
 
     def popup(self, header, input_text):
         self.popupwindow = tk.Toplevel()
