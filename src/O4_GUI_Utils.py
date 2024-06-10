@@ -1392,6 +1392,100 @@ class Ortho4XP_Earth_Preview(tk.Toplevel):
         self.threaded_preview()
         return
 
+    def add_symlink(self, lat: int, lon: int) -> None:
+        """Add symlink to custom_scenery_dir."""
+        if not self.grouped:
+            link = os.path.join(
+                CFG.custom_scenery_dir,
+                "zOrtho4XP_" + FNAMES.short_latlon(lat, lon),
+            )
+            target = os.path.realpath(
+                os.path.join(self.working_dir, self.dico_tiles_done[(lat, lon)][-1])
+            )
+        elif self.grouped:
+            link = os.path.join(
+                CFG.custom_scenery_dir,
+                "zOrtho4XP_" + os.path.basename(self.working_dir),
+            )
+            target = os.path.realpath(self.working_dir)
+        if ("dar" in sys.platform) or ("win" not in sys.platform):
+            # Mac and Linux
+            os.system("ln -s " + ' "' + target + '" "' + link + '"')
+        else:
+            os.system('MKLINK /J "' + link + '" "' + target + '"')
+        if not self.grouped:
+            if not OsX:
+                self.canvas.itemconfig(
+                    self.dico_tiles_done[(lat, lon)][0], stipple="gray50"
+                )
+            else:
+                self.canvas.itemconfig(
+                    self.dico_tiles_done[(lat, lon)][1],
+                    font=("Helvetica", "12", "bold underline"),
+                )
+        else:
+            for lat0, lon0 in self.dico_tiles_done:
+                if not OsX:
+                    self.canvas.itemconfig(
+                        self.dico_tiles_done[(lat0, lon0)][0], stipple="gray50"
+                    )
+                else:
+                    self.canvas.itemconfig(
+                        self.dico_tiles_done[(lat, lon)][1],
+                        font=("Helvetica", "12", "bold underline"),
+                    )
+
+    def remove_symlink(self, lat: int, lon: int) -> None:
+        """Remove symlink from custom_scenery_dir."""
+        if not self.grouped:
+            link = os.path.join(
+                CFG.custom_scenery_dir,
+                "zOrtho4XP_" + FNAMES.short_latlon(lat, lon),
+            )
+            target = os.path.realpath(
+                os.path.join(self.working_dir, self.dico_tiles_done[(lat, lon)][-1])
+            )
+            if os.path.isdir(link) and os.path.samefile(os.path.realpath(link), target):
+                os.remove(link)
+                if not OsX:
+                    self.canvas.itemconfig(
+                        self.dico_tiles_done[(lat, lon)][0], stipple="gray12"
+                    )
+                else:
+                    self.canvas.itemconfig(
+                        self.dico_tiles_done[(lat, lon)][1],
+                        font=("Helvetica", "12", "normal"),
+                    )
+                return True
+
+        elif self.grouped:
+            link = os.path.join(
+                CFG.custom_scenery_dir,
+                "zOrtho4XP_" + os.path.basename(self.working_dir),
+            )
+            target = os.path.realpath(self.working_dir)
+            if os.path.isdir(link) and os.path.samefile(
+                os.path.realpath(link), os.path.realpath(self.working_dir)
+            ):
+                os.remove(link)
+                for (lat, lon) in self.dico_tiles_done:
+                    if not OsX:
+                        self.canvas.itemconfig(
+                            self.dico_tiles_done[(lat, lon)][0],
+                            stipple="gray12",
+                        )
+                    else:
+                        self.canvas.itemconfig(
+                            self.dico_tiles_done[(lat, lon)][1],
+                            font=("Helvetica", "12", "normal"),
+                        )
+                return True
+        # in case this was a broken link
+        try:
+            os.remove(link)
+        except:
+            pass
+
     def set_working_dir(self):
         self.custom_build_dir = self.parent.custom_build_dir.get()
         self.grouped = (
@@ -1642,11 +1736,23 @@ class Ortho4XP_Earth_Preview(tk.Toplevel):
         if self.v_["OSM data"].get():
             try:
                 shutil.rmtree(FNAMES.osm_dir(self.active_lat, self.active_lon))
+                UI.vprint(
+                    1,
+                    "OSM data removed for tile at "
+                    + str(self.active_lat)
+                    + str(self.active_lon),
+                )
             except Exception as e:
                 UI.vprint(3, e)
         if self.v_["Mask data"].get():
             try:
                 shutil.rmtree(FNAMES.mask_dir(self.active_lat, self.active_lon))
+                UI.vprint(
+                    1,
+                    "Mask data removed for tile at "
+                    + str(self.active_lat)
+                    + str(self.active_lon),
+                )
             except Exception as e:
                 UI.vprint(3, e)
         if self.v_["Jpeg imagery"].get():
@@ -1657,15 +1763,28 @@ class Ortho4XP_Earth_Preview(tk.Toplevel):
                         FNAMES.long_latlon(self.active_lat, self.active_lon),
                     )
                 )
+                UI.vprint(
+                    1,
+                    "Jpeg imagery removed for tile at "
+                    + str(self.active_lat)
+                    + str(self.active_lon),
+                )
             except Exception as e:
                 UI.vprint(3, e)
         if self.v_["Tile (whole)"].get() and not self.grouped:
             try:
+                self.remove_symlink(self.active_lat, self.active_lon)
                 shutil.rmtree(
                     FNAMES.build_dir(
                         self.active_lat, self.active_lon, self.custom_build_dir
                     )
                 )
+                UI.vprint(
+                1,
+                "Tile (whole) removed for tile at "
+                + str(self.active_lat)
+                + str(self.active_lon),
+            )
             except Exception as e:
                 UI.vprint(3, e)
             if (self.active_lat, self.active_lon) in self.dico_tiles_done:
@@ -1685,6 +1804,12 @@ class Ortho4XP_Earth_Preview(tk.Toplevel):
                         ),
                         "textures",
                     )
+                )
+                UI.vprint(
+                1,
+                "Tile (textures) removed for tile at "
+                + str(self.active_lat)
+                + str(self.active_lon),
                 )
             except Exception as e:
                 UI.vprint(3, e)
@@ -1710,92 +1835,16 @@ class Ortho4XP_Earth_Preview(tk.Toplevel):
         self.parent.lon.set(lon)
         return
 
-    def toggle_to_custom(self, event):
+    def toggle_to_custom(self, event: tk.Event) -> None:
+        """Create or delete symlink to custom_scenery_dir on user action."""
         x = self.canvas.canvasx(event.x)
         y = self.canvas.canvasy(event.y)
         (lat, lon) = [floor(t) for t in GEO.pix_to_wgs84(x, y, self.earthzl)]
         if (lat, lon) not in self.dico_tiles_done:
             return
-        if not self.grouped:
-            link = os.path.join(
-                CFG.custom_scenery_dir,
-                "zOrtho4XP_" + FNAMES.short_latlon(lat, lon),
-            )
-            # target=os.path.realpath(os.path.join(self.working_dir,
-            # 'zOrtho4XP_'+FNAMES.short_latlon(lat,lon)))
-            target = os.path.realpath(
-                os.path.join(
-                    self.working_dir, self.dico_tiles_done[(lat, lon)][-1]
-                )
-            )
-            if os.path.isdir(link) and os.path.samefile(
-                os.path.realpath(link), target
-            ):
-                os.remove(link)
-                if not OsX:
-                    self.canvas.itemconfig(
-                        self.dico_tiles_done[(lat, lon)][0], stipple="gray12"
-                    )
-                else:
-                    self.canvas.itemconfig(
-                        self.dico_tiles_done[(lat, lon)][1],
-                        font=("Helvetica", "12", "normal"),
-                    )
-                return
-        elif self.grouped:
-            link = os.path.join(
-                CFG.custom_scenery_dir,
-                "zOrtho4XP_" + os.path.basename(self.working_dir),
-            )
-            target = os.path.realpath(self.working_dir)
-            if os.path.isdir(link) and os.path.samefile(
-                os.path.realpath(link), os.path.realpath(self.working_dir)
-            ):
-                os.remove(link)
-                for (lat0, lon0) in self.dico_tiles_done:
-                    if not OsX:
-                        self.canvas.itemconfig(
-                            self.dico_tiles_done[(lat, lon)][0],
-                            stipple="gray12",
-                        )
-                    else:
-                        self.canvas.itemconfig(
-                            self.dico_tiles_done[(lat, lon)][1],
-                            font=("Helvetica", "12", "normal"),
-                        )
-                return
-        # in case this was a broken link
-        try:
-            os.remove(link)
-        except:
-            pass
-        if ("dar" in sys.platform) or (
-            "win" not in sys.platform
-        ):  # Mac and Linux
-            os.system("ln -s " + ' "' + target + '" "' + link + '"')
-        else:
-            os.system('MKLINK /J "' + link + '" "' + target + '"')
-        if not self.grouped:
-            if not OsX:
-                self.canvas.itemconfig(
-                    self.dico_tiles_done[(lat, lon)][0], stipple="gray50"
-                )
-            else:
-                self.canvas.itemconfig(
-                    self.dico_tiles_done[(lat, lon)][1],
-                    font=("Helvetica", "12", "bold underline"),
-                )
-        else:
-            for (lat0, lon0) in self.dico_tiles_done:
-                if not OsX:
-                    self.canvas.itemconfig(
-                        self.dico_tiles_done[(lat0, lon0)][0], stipple="gray50"
-                    )
-                else:
-                    self.canvas.itemconfig(
-                        self.dico_tiles_done[(lat, lon)][1],
-                        font=("Helvetica", "12", "bold underline"),
-                    )
+        if self.remove_symlink(lat, lon):
+            return
+        self.add_symlink(lat, lon)
         return
 
     def add_tile(self, event):
