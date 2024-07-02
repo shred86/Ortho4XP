@@ -48,6 +48,7 @@ The specific changes in this forked version:
 * Fixed a bug where symlinks weren't automatically deleted if you used the Erased cached data - Tile (whole) option.
 * Fixed a bug if you created zones on a tile then clicked "Apply" (which no longer exists as a button) before saving the tile config, it would delete your zones.
 * Fix Viewfinderpanorama elevation source for certain regions of the world.
+* Fix Here (https://wego.here.com/) image provider API key.
 * Corrected a few typos in setting descriptions.
 
 

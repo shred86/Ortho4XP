@@ -303,10 +303,12 @@ def remove_unwanted_textures(tile):
     for f in os.listdir(os.path.join(tile.build_dir, "terrain")):
         if f[-4:] != ".ter":
             continue
-        if f[-5] != "y":  # overlay
-            texture_list.append(f.replace(".ter", ".dds"))
-        else:
+        if f[-5] == "y":  # water overlay
             texture_list.append("_".join(f[:-4].split("_")[:-2]) + ".dds")
+        if f[-5] == "a":  # sea
+            texture_list.append("_".join(f[:-4].split("_")[:-1]) + ".dds")
+        else:
+            texture_list.append(f.replace(".ter", ".dds"))
     for f in os.listdir(os.path.join(tile.build_dir, "textures")):
         if f[-4:] != ".dds":
             continue

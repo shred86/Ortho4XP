@@ -77,7 +77,7 @@ def get_Here_value():
         Here_value="loading"
         js_path=str(requests.get('https://wego.here.com').content).split('<script defer="defer" src="')[1][:100].split('"')[0]
         print("js_path: "+js_path)
-        Here_value=str(requests.get('https://wego.here.com'+js_path).content).split('APP_KEY:"')[1][:100].split('"')[0]
+        Here_value=str(requests.get('https://wego.here.com'+js_path).content).split('PLATFORM_API_KEY:"')[1][:100].split('"')[0]
         print("Here_value: "+Here_value)
         Here_time=time.time()
     return Here_value
