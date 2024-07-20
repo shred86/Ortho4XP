@@ -16,7 +16,12 @@ custom_overlay_src = ""
 custom_overlay_src_alternate = ""
 
 if "dar" in sys.platform:
-    unzip_cmd = "7z"
+    unzip_cmd = os.path.join(FNAMES.Utils_dir, "mac", "7zz")
+    # As of version 1.40.08, the 7zz executable was added to Utils/mac
+    # For user upgrading from previous versions (only updated the Ortho4XP executable),
+    # we continue to use 7z installed on the system.
+    if not os.path.exists(unzip_cmd):
+        unzip_cmd = "7z"
     dsftool_cmd = os.path.join(FNAMES.Utils_dir, "mac", "DSFTool ")
 elif "win" in sys.platform:
     unzip_cmd = os.path.join(FNAMES.Utils_dir, "win", "7z.exe")

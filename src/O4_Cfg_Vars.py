@@ -233,7 +233,7 @@ cfg_tile_vars = {
     },
     "imprint_masks_to_dds": {
         "type": bool,
-        "default": True,
+        "default": False,
         "hint": "Will apply masking directly to dds textures (at the Build Imagery/DSF step) rather than using external png files. This doubles the file size of masked textures (dxt5 vs dxt1) but reduce the overall VRAM footprint (a matter of choice!)",
     },
     "distance_masks_too": {

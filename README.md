@@ -42,6 +42,8 @@ The specific changes in this forked version:
 * Update and pin requirements to latest working versions.
 * Adds a bash script to automate the setup process for those that prefer not to use the packaged version.
 * Removed Maxar and Mapbox image providers which are no longer publically available.
+* Removed unavailable OSM FR and updated RU server with a working URL.
+* Include 7-zip executable for macOS.
 
 #### Bug Fixes
 * If one-click symlink feature is used, added removal of symlink when "Erase cached data" "Tile (whole)" option is used.
@@ -52,6 +54,7 @@ The specific changes in this forked version:
 * Fixed Here (https://wego.here.com/) image provider API key.
 * Fixed issue in certain coastal regions where .dds files were being deleted with cleaning_level set to 2 or higher.
 * Corrected a few typos in setting descriptions.
+* Default `imprint_mask_to_dds` to `False` to prevent issues when using `water_tech=XP12`.
 
 
 ## Installation
