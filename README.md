@@ -33,6 +33,7 @@ The specific changes in this forked version:
 * Prompt user if attempting to build tiles with unsaved changes in the config window.
 * Backup of the tile configuration is created when using the "Save Tile Config" button (previously was only during a tile build process).
 * Default `imprint_mask_to_dds` to `False` to prevent issues with `water_tech=XP12`.
+* Added a new setting `max_download_slots` to support a new feature allowing users to specify number of parallel threads for imagery download. @tlinkin
 
 #### Miscellaneous
 * Automatically saves the same data (active tile, default provider, default zoom level and base folder) that the power button icon does when you close the application using the operating system close button.
@@ -45,10 +46,11 @@ The specific changes in this forked version:
 * Update and pin requirements to latest working versions.
 * Adds a bash script to automate the setup process for those that prefer not to use the packaged version.
 * Removed Maxar and Mapbox image providers which are no longer publically available.
-* Removed unavailable OSM FR and updated RU server with a working URL.
+* Removed unavailable OSM FR, updated/added RU and JP overpass servers.
 * Include 7-zip executable for macOS.
 * Update EOX url template and deleted the broken EOX2.lay file. @A346fan
 * Update nvcompress to macOS universal binary. @w8sl
+* Updated Windows & Linux nvcompress to latest version. @tlinkin
 * Update DFSTool to latest version 24-5.
 * Removed unused tools.
 

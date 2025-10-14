@@ -15,7 +15,7 @@ import O4_DSF_Utils as DSF
 import O4_Overlay_Utils as OVL
 from O4_Parallel_Utils import parallel_launch, parallel_join
 
-max_download_slots = 16
+max_download_slots = 1
 max_convert_slots = 4
 skip_downloads = False
 skip_converts = False
