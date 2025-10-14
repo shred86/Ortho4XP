@@ -1692,7 +1692,7 @@ class Ortho4XP_Earth_Preview(tk.Toplevel):
     def set_working_dir(self):
         self.custom_build_dir = self.parent.custom_build_dir.get()
         self.grouped = (
-            self.custom_build_dir and (self.custom_build_dir[-1] != "/" or self.custom_build_dir[-1] != "\\")
+            self.custom_build_dir and not self.custom_build_dir.endswith(("/", "\\"))
         )
         self.working_dir = (
             self.custom_build_dir if self.custom_build_dir else FNAMES.Tile_dir

@@ -73,7 +73,7 @@ def tile_dir(lat, lon):
 def build_dir(lat, lon, custom_build_dir):
     if not custom_build_dir:
         return os.path.join(Tile_dir, tile_dir(lat, lon))
-    elif custom_build_dir[-1] == "/" or custom_build_dir[-1] == "\\":
+    elif custom_build_dir and custom_build_dir.endswith(("/", "\\")):
         return os.path.join(custom_build_dir[:-1], tile_dir(lat, lon))
     else:
         return custom_build_dir

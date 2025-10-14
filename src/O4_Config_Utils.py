@@ -144,7 +144,7 @@ class Tile:
         self.custom_build_dir = custom_build_dir
         self.grouped = (
             True
-            if (custom_build_dir and (custom_build_dir[-1] != "/" or custom_build_dir[-1] != "\\"))
+            if custom_build_dir and not custom_build_dir.endswith(("/", "\\"))
             else False
         )
         self.build_dir = FNAMES.build_dir(lat, lon, custom_build_dir)
