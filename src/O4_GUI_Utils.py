@@ -819,11 +819,14 @@ class Ortho4XP_Custom_ZL(tk.Toplevel):
         self.coords = []
         self.polygon_list = []
         self.polyobj_list = []
+        self._stop_event = threading.Event()
+        self._dispp_thread = None
 
         tk.Toplevel.__init__(self)
         self.title("Preview / Custom Zoom Levels")
         self.columnconfigure(1, weight=1)
         self.rowconfigure(0, weight=1)
+        self.protocol("WM_DELETE_WINDOW", self.exit)
 
         # Constants
 
@@ -1003,11 +1006,15 @@ class Ortho4XP_Custom_ZL(tk.Toplevel):
         ).grid(row=row, column=0, padx=5, pady=3, sticky=N + S + E + W)
         row += 1
         ttk.Button(
-            self.frame_left, text="    Exit     ", command=self.destroy
+            self.frame_left, text="    Exit     ", command=self.exit
         ).grid(row=row, column=0, padx=5, pady=3, sticky=N + S + E + W)
         row += 1
         self.canvas = tk.Canvas(self.frame_right, bd=0, height=750, width=750)
         self.canvas.grid(row=0, column=0, sticky=N + S + E + W)
+
+    def exit(self):
+        self._stop_event.set()
+        self.destroy()
 
     def preview_tile(self, lat, lon):
         self.zoomlevel = int(self.zl_combo.get())
@@ -1028,17 +1035,20 @@ class Ortho4XP_Custom_ZL(tk.Toplevel):
             self.latmin, self.lonmax, zoomlevel
         )
         filepreview = FNAMES.preview(lat, lon, zoomlevel, provider_code)
+        if self._dispp_thread and self._dispp_thread.is_alive():
+            return
+        self._stop_event.clear()
         if os.path.isfile(filepreview) != True:
             fargs_ctp = [lat, lon, zoomlevel, provider_code]
             self.ctp_thread = threading.Thread(
-                target=IMG.create_tile_preview, args=fargs_ctp
+                target=IMG.create_tile_preview, args=fargs_ctp, daemon=True
             )
             self.ctp_thread.start()
             fargs_dispp = [filepreview, lat, lon]
-            dispp_thread = threading.Thread(
-                target=self.show_tile_preview, args=fargs_dispp
+            self._dispp_thread = threading.Thread(
+                target=self.show_tile_preview, args=fargs_dispp, daemon=True
             )
-            dispp_thread.start()
+            self._dispp_thread.start()
         else:
             self.show_tile_preview(filepreview, lat, lon)
         return
@@ -1058,63 +1068,72 @@ class Ortho4XP_Custom_ZL(tk.Toplevel):
         except:
             pass
         try:
-            self.ctp_thread.join()
+            while self.ctp_thread.is_alive():
+                if self._stop_event.is_set():
+                    return
+                self.ctp_thread.join(timeout=0.2)
         except:
             pass
-        self.image = Image.open(filepreview)
-        self.photo = ImageTk.PhotoImage(self.image)
-        self.map_x_res = self.photo.width()
-        self.map_y_res = self.photo.height()
-        self.img_map = self.canvas.create_image(
-            0, 0, anchor=NW, image=self.photo
-        )
-        self.canvas.config(scrollregion=self.canvas.bbox(ALL))
-        # As of Python3.13.5, the mouse button mappings changed
-        if "dar" in sys.platform and sys.version_info <= (3, 12):
-            self.canvas.bind("<ButtonPress-2>", self.scroll_start)
-            self.canvas.bind("<B2-Motion>", self.scroll_move)
-            self.canvas.bind("<Control-ButtonPress-2>", self.delPol)
-        self.canvas.bind("<ButtonPress-3>", self.scroll_start)
-        self.canvas.bind("<B3-Motion>", self.scroll_move)
-        self.canvas.bind("<Control-ButtonPress-3>", self.delPol)
-        self.canvas.bind(
-            "<ButtonPress-1>", lambda event: self.canvas.focus_set()
-        )
-        self.canvas.bind("<Shift-ButtonPress-1>", self.newPoint)
-        self.canvas.bind("<Control-Shift-ButtonPress-1>", self.newPointGrid)
-        self.canvas.bind("<Control-ButtonPress-1>", self.newPol)
-        self.canvas.focus_set()
-        self.canvas.bind("p", self.newPoint)
-        self.canvas.bind("d", self.delete_zone_cmd)
-        self.canvas.bind("n", self.save_zone_cmd)
-        self.canvas.bind("<BackSpace>", self.delLast)
-        self.polygon_list = []
-        self.polyobj_list = []
-        self.poly_curr = []
-        bdpoints = []
-        for [latp, lonp] in [
-            [lat, lon],
-            [lat, lon + 1],
-            [lat + 1, lon + 1],
-            [lat + 1, lon],
-        ]:
-            [x, y] = self.latlon_to_xy(latp, lonp, self.zoomlevel)
-            bdpoints += [int(x), int(y)]
-        self.boundary = self.canvas.create_polygon(
-            bdpoints, outline="black", fill="", width=2
-        )
-        for zone in CFG.zone_list:
-            self.coords = zone[0][0:-2]
-            self.zlpol.set(zone[1])
-            self.zmap_combo.set(zone[2])
-            self.points = []
-            for idxll in range(0, len(self.coords) // 2):
-                latp = self.coords[2 * idxll]
-                lonp = self.coords[2 * idxll + 1]
+        if self._stop_event.is_set():
+            return
+        try:
+            self.image = Image.open(filepreview)
+            self.photo = ImageTk.PhotoImage(self.image)
+            self.image.close()
+            self.map_x_res = self.photo.width()
+            self.map_y_res = self.photo.height()
+            self.img_map = self.canvas.create_image(
+                0, 0, anchor=NW, image=self.photo
+            )
+            self.canvas.config(scrollregion=self.canvas.bbox(ALL))
+            # As of Python3.13.5, the mouse button mappings changed
+            if "dar" in sys.platform and sys.version_info <= (3, 12):
+                self.canvas.bind("<ButtonPress-2>", self.scroll_start)
+                self.canvas.bind("<B2-Motion>", self.scroll_move)
+                self.canvas.bind("<Control-ButtonPress-2>", self.delPol)
+            self.canvas.bind("<ButtonPress-3>", self.scroll_start)
+            self.canvas.bind("<B3-Motion>", self.scroll_move)
+            self.canvas.bind("<Control-ButtonPress-3>", self.delPol)
+            self.canvas.bind(
+                "<ButtonPress-1>", lambda event: self.canvas.focus_set()
+            )
+            self.canvas.bind("<Shift-ButtonPress-1>", self.newPoint)
+            self.canvas.bind("<Control-Shift-ButtonPress-1>", self.newPointGrid)
+            self.canvas.bind("<Control-ButtonPress-1>", self.newPol)
+            self.canvas.focus_set()
+            self.canvas.bind("p", self.newPoint)
+            self.canvas.bind("d", self.delete_zone_cmd)
+            self.canvas.bind("n", self.save_zone_cmd)
+            self.canvas.bind("<BackSpace>", self.delLast)
+            self.polygon_list = []
+            self.polyobj_list = []
+            self.poly_curr = []
+            bdpoints = []
+            for [latp, lonp] in [
+                [lat, lon],
+                [lat, lon + 1],
+                [lat + 1, lon + 1],
+                [lat + 1, lon],
+            ]:
                 [x, y] = self.latlon_to_xy(latp, lonp, self.zoomlevel)
-                self.points += [int(x), int(y)]
-            self.redraw_poly()
-            self.save_zone_cmd()
+                bdpoints += [int(x), int(y)]
+            self.boundary = self.canvas.create_polygon(
+                bdpoints, outline="black", fill="", width=2
+            )
+            for zone in CFG.zone_list:
+                self.coords = zone[0][0:-2]
+                self.zlpol.set(zone[1])
+                self.zmap_combo.set(zone[2])
+                self.points = []
+                for idxll in range(0, len(self.coords) // 2):
+                    latp = self.coords[2 * idxll]
+                    lonp = self.coords[2 * idxll + 1]
+                    [x, y] = self.latlon_to_xy(latp, lonp, self.zoomlevel)
+                    self.points += [int(x), int(y)]
+                self.redraw_poly()
+                self.save_zone_cmd()
+        except tk.TclError:
+            pass
         return
 
     def scroll_start(self, event):
@@ -1417,6 +1436,9 @@ class Ortho4XP_Earth_Preview(tk.Toplevel):
         for item in self.list_del_ckbtn + self.list_do_ckbtn:
             self.v_[item] = tk.IntVar()
         self.latlon = tk.StringVar()
+        self._stop_event = threading.Event()
+        self._preview_thread = None
+        self.protocol("WM_DELETE_WINDOW", self.exit)
 
         # Frames
         self.frame_left = tk.Frame(
@@ -1716,7 +1738,13 @@ class Ortho4XP_Earth_Preview(tk.Toplevel):
         return
 
     def threaded_preview(self):
-        threading.Thread(target=self.preview_existing_tiles).start()
+        if self._preview_thread and self._preview_thread.is_alive():
+            return
+        self._stop_event.clear()
+        self._preview_thread = threading.Thread(
+            target=self.preview_existing_tiles, daemon=True
+        )
+        self._preview_thread.start()
 
     def preview_existing_tiles(self):
         dico_color = {
@@ -1730,6 +1758,12 @@ class Ortho4XP_Earth_Preview(tk.Toplevel):
             18: "orange",
             19: "red",
         }
+        try:
+            self._preview_existing_tiles_inner(dico_color)
+        except tk.TclError:
+            pass
+
+    def _preview_existing_tiles_inner(self, dico_color):
         if self.dico_tiles_done:
             for tile in self.dico_tiles_done:
                 for objid in self.dico_tiles_done[tile][:2]:
@@ -1737,6 +1771,8 @@ class Ortho4XP_Earth_Preview(tk.Toplevel):
             self.dico_tiles_done = {}
         if not self.grouped:
             for dir_name in os.listdir(self.working_dir):
+                if self._stop_event.is_set():
+                    return
                 if "XP_" in dir_name:
                     try:
                         lat = int(dir_name.split("XP_")[1][:3])
@@ -1857,6 +1893,8 @@ class Ortho4XP_Earth_Preview(tk.Toplevel):
             for dir_name in os.listdir(
                 os.path.join(self.working_dir, "Earth nav data")
             ):
+                if self._stop_event.is_set():
+                    return
                 for file_name in os.listdir(
                     os.path.join(self.working_dir, "Earth nav data", dir_name)
                 ):
@@ -2221,7 +2259,7 @@ class Ortho4XP_Earth_Preview(tk.Toplevel):
                 pass
             fargs_rc = [nx0, ny0]
             self.rc_thread = threading.Thread(
-                target=self.draw_canvas, args=fargs_rc
+                target=self.draw_canvas, args=fargs_rc, daemon=True
             )
             self.rc_thread.start()
             return
@@ -2234,6 +2272,7 @@ class Ortho4XP_Earth_Preview(tk.Toplevel):
         try:
             self.imageNW = Image.open(filepreviewNW)
             self.photoNW = ImageTk.PhotoImage(self.imageNW)
+            self.imageNW.close()
             self.canv_imgNW = self.canvas.create_image(
                 nx0 * 2 ** self.earthzl * 256 / 8,
                 ny0 * 2 ** self.earthzl * 256 / 8,
@@ -2250,45 +2289,52 @@ class Ortho4XP_Earth_Preview(tk.Toplevel):
             )
             _LOGGER.exception(e)
             return
-        if nx0 < 2 ** (self.earthzl - 3) - 1:
-            filepreviewNE = fileprefix + str(nx0 + 1) + "_" + str(ny0) + ".jpg"
-            self.imageNE = Image.open(filepreviewNE)
-            self.photoNE = ImageTk.PhotoImage(self.imageNE)
-            self.canv_imgNE = self.canvas.create_image(
-                (nx0 + 1) * 2 ** self.earthzl * 256 / 8,
-                ny0 * 2 ** self.earthzl * 256 / 8,
-                anchor=NW,
-                image=self.photoNE,
-            )
-            self.canvas.tag_lower(self.canv_imgNE)
-        if ny0 < 2 ** (self.earthzl - 3) - 1:
-            filepreviewSW = fileprefix + str(nx0) + "_" + str(ny0 + 1) + ".jpg"
-            self.imageSW = Image.open(filepreviewSW)
-            self.photoSW = ImageTk.PhotoImage(self.imageSW)
-            self.canv_imgSW = self.canvas.create_image(
-                nx0 * 2 ** self.earthzl * 256 / 8,
-                (ny0 + 1) * 2 ** self.earthzl * 256 / 8,
-                anchor=NW,
-                image=self.photoSW,
-            )
-            self.canvas.tag_lower(self.canv_imgSW)
-        if (
-            nx0 < 2 ** (self.earthzl - 3) - 1
-            and ny0 < 2 ** (self.earthzl - 3) - 1
-        ):
-            filepreviewSE = (
-                fileprefix + str(nx0 + 1) + "_" + str(ny0 + 1) + ".jpg"
-            )
-            self.imageSE = Image.open(filepreviewSE)
-            self.photoSE = ImageTk.PhotoImage(self.imageSE)
-            self.canv_imgSE = self.canvas.create_image(
-                (nx0 + 1) * 2 ** self.earthzl * 256 / 8,
-                (ny0 + 1) * 2 ** self.earthzl * 256 / 8,
-                anchor=NW,
-                image=self.photoSE,
-            )
-            self.canvas.tag_lower(self.canv_imgSE)
+        try:
+            if nx0 < 2 ** (self.earthzl - 3) - 1:
+                filepreviewNE = fileprefix + str(nx0 + 1) + "_" + str(ny0) + ".jpg"
+                self.imageNE = Image.open(filepreviewNE)
+                self.photoNE = ImageTk.PhotoImage(self.imageNE)
+                self.imageNE.close()
+                self.canv_imgNE = self.canvas.create_image(
+                    (nx0 + 1) * 2 ** self.earthzl * 256 / 8,
+                    ny0 * 2 ** self.earthzl * 256 / 8,
+                    anchor=NW,
+                    image=self.photoNE,
+                )
+                self.canvas.tag_lower(self.canv_imgNE)
+            if ny0 < 2 ** (self.earthzl - 3) - 1:
+                filepreviewSW = fileprefix + str(nx0) + "_" + str(ny0 + 1) + ".jpg"
+                self.imageSW = Image.open(filepreviewSW)
+                self.photoSW = ImageTk.PhotoImage(self.imageSW)
+                self.imageSW.close()
+                self.canv_imgSW = self.canvas.create_image(
+                    nx0 * 2 ** self.earthzl * 256 / 8,
+                    (ny0 + 1) * 2 ** self.earthzl * 256 / 8,
+                    anchor=NW,
+                    image=self.photoSW,
+                )
+                self.canvas.tag_lower(self.canv_imgSW)
+            if (
+                nx0 < 2 ** (self.earthzl - 3) - 1
+                and ny0 < 2 ** (self.earthzl - 3) - 1
+            ):
+                filepreviewSE = (
+                    fileprefix + str(nx0 + 1) + "_" + str(ny0 + 1) + ".jpg"
+                )
+                self.imageSE = Image.open(filepreviewSE)
+                self.photoSE = ImageTk.PhotoImage(self.imageSE)
+                self.imageSE.close()
+                self.canv_imgSE = self.canvas.create_image(
+                    (nx0 + 1) * 2 ** self.earthzl * 256 / 8,
+                    (ny0 + 1) * 2 ** self.earthzl * 256 / 8,
+                    anchor=NW,
+                    image=self.photoSE,
+                )
+                self.canvas.tag_lower(self.canv_imgSE)
+        except tk.TclError:
+            pass
         return
 
     def exit(self):
+        self._stop_event.set()
         self.destroy()
