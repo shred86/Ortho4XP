@@ -12,7 +12,6 @@ import O4_File_Names as FNAMES
 import O4_Geo_Utils as GEO
 import O4_Vector_Utils as VECT
 import O4_OSM_Utils as OSM
-import O4_Version
 
 if "dar" in sys.platform:
     Triangle4XP_cmd = os.path.join(FNAMES.Utils_dir, "mac", "Triangle4XP ")

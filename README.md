@@ -67,7 +67,6 @@ The specific changes in this forked version:
 * Corrected a few typos in setting descriptions.
 * Default `imprint_mask_to_dds` to `False` to prevent issues when using `water_tech=XP12`.
 * Fixed a bug with random OSM server selection not working correctly.
-* Include recompiled version of Triangle4XP.exe with MinGW-GCC for Windows users to resolve an [issue](https://github.com/oscarpilote/Ortho4XP/issues/282).
 * Fixed a bug when using manually installed dem files were not being used on certain tiles.
 * Fixed a bug and improved handling of complex meshes (e.g., +30-085) that would cause the build process to get stuck.
 * Fixed and improved automatically trying a lower `min_angle` value when the current value fails.
