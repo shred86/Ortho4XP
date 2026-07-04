@@ -1,5 +1,6 @@
 import os
 import time
+import threading
 from math import pi, sin, cos, sqrt, atan, exp
 import numpy
 from shapely import geometry, ops
@@ -14,6 +15,133 @@ import O4_Geo_Utils as GEO
 import O4_Airport_Utils as APT
 
 good_imagery_list = ()
+
+################################################################################
+# OSM layer download specifications, shared between the include_* encoders
+# below and the background prefetch: a single source for each layer's
+# Overpass statements and tags, so the cache a prefetch writes is exactly
+# the cache the encoder would have written itself.
+################################################################################
+BIG_ROADS_QUERIES = [
+    'way["highway"="motorway"]',
+    'way["highway"="trunk"]',
+    'way["highway"="primary"]',
+    'way["highway"="secondary"]',
+    'way["railway"="rail"]',
+    'way["railway"="narrow_gauge"]',
+]
+ROADS_TAGS_OF_INTEREST = ["bridge", "tunnel"]
+COASTLINE_QUERIES = ['way["natural"="coastline"]']
+WATER_QUERIES = [
+    'rel["natural"="water"]',
+    'rel["waterway"="riverbank"]',
+    'way["natural"="water"]',
+    'way["waterway"="riverbank"]',
+    'way["waterway"="dock"]',
+]
+WATER_TAGS_OF_INTEREST = ["name"]
+
+
+def small_roads_queries(road_level):
+    queries = ['way["highway"="tertiary"]']
+    if road_level >= 3:
+        queries += [
+            'way["highway"="unclassified"]',
+            'way["highway"="residential"]',
+        ]
+    if road_level >= 4:
+        queries += ['way["highway"="service"]']
+    if road_level >= 5:
+        queries += ['way["highway"="track"]']
+    return queries
+
+
+def _osm_layer_prefetch_specifications(tile):
+    """Every OSM layer this tile build will download besides the airports
+    layer, in download order, honouring the same conditions the encoders
+    apply (road_level gates; custom coastline/water data replaces the
+    Overpass download entirely)."""
+    specifications = []
+    if tile.road_level:
+        specifications.append(
+            ("big_roads", BIG_ROADS_QUERIES, ROADS_TAGS_OF_INTEREST))
+    if tile.road_level >= 2:
+        specifications.append(
+            ("small_roads", small_roads_queries(tile.road_level),
+             ROADS_TAGS_OF_INTEREST))
+    if not (os.path.isfile(FNAMES.custom_coastline(tile.lat, tile.lon))
+            or os.path.isdir(FNAMES.custom_coastline_dir(tile.lat,
+                                                         tile.lon))):
+        specifications.append(("coastline", COASTLINE_QUERIES, []))
+    if not (os.path.isfile(FNAMES.custom_water(tile.lat, tile.lon))
+            or os.path.isdir(FNAMES.custom_water_dir(tile.lat, tile.lon))):
+        specifications.append(
+            ("water", WATER_QUERIES, WATER_TAGS_OF_INTEREST))
+    return specifications
+
+
+_osm_prefetch_thread = None
+
+
+def start_background_osm_prefetch(tile):
+    """Download this tile's remaining OSM layer caches in the background.
+
+    Started as soon as the airports layer (the only data the next
+    pipeline stages need immediately) has arrived: the road, coastline
+    and water layers then download WHILE airport processing and the
+    auto-patch builds compute, instead of after them.  Downloads run
+    sequentially — one Overpass request at a time — so the prefetch is
+    no harder on the servers than the old inline order, just earlier.
+    Consumers call wait_for_background_osm_prefetch() and then read the
+    cache exactly as before.
+    """
+    global _osm_prefetch_thread
+    wait_for_background_osm_prefetch()  # never two prefetches at once
+    specifications = [
+        (cached_suffix, queries, tags_of_interest)
+        for (cached_suffix, queries, tags_of_interest)
+        in _osm_layer_prefetch_specifications(tile)
+        if not os.path.isfile(
+            FNAMES.osm_cached(tile.lat, tile.lon, cached_suffix))
+    ]
+    if not specifications:
+        return
+    UI.vprint(
+        1,
+        "    * Prefetching OSM data in the background:",
+        ", ".join(specification[0] for specification in specifications),
+    )
+
+    def download_missing_layer_caches():
+        for cached_suffix, queries, tags_of_interest in specifications:
+            if UI.red_flag:
+                return
+            # The layer object is discarded: the point is the cache file
+            # OSM_queries_to_OSM_layer writes, which the encoder later
+            # recycles.
+            OSM.OSM_queries_to_OSM_layer(
+                queries,
+                OSM.OSM_layer(),
+                tile.lat,
+                tile.lon,
+                tags_of_interest,
+                cached_suffix=cached_suffix,
+            )
+
+    _osm_prefetch_thread = threading.Thread(
+        target=download_missing_layer_caches, daemon=True)
+    _osm_prefetch_thread.start()
+
+
+def wait_for_background_osm_prefetch():
+    """Block until the background OSM prefetch (if any) has finished.
+    Callers that read a layer cache MUST call this first, so they never
+    race the prefetch on the same cache file."""
+    global _osm_prefetch_thread
+    if _osm_prefetch_thread is not None:
+        _osm_prefetch_thread.join()
+        _osm_prefetch_thread = None
+
 
 ################################################################################
 def build_poly_file(tile):
@@ -193,6 +321,13 @@ def include_airports(vector_map, tile):
         cached_suffix="airports",
     ):
         return (0, 0)
+    # The airports layer was the only download the next stages need
+    # right away — fetch every other layer this build will read in the
+    # background while airport processing / auto-patch builds compute.
+    # (The auto-patch road-aware grading reads the big_roads cache at
+    # build time, so without this the roads would arrive too late on a
+    # freshly built tile.)
+    start_background_osm_prefetch(tile)
     dico_airports = {}
     APT.discover_airport_names(airport_layer, dico_airports)
     APT.attach_surfaces_to_airports(airport_layer, dico_airports)
@@ -253,21 +388,14 @@ def include_roads(vector_map, tile, apt_array, apt_area):
     if not tile.road_level:
         return
     UI.vprint(0, "-> Dealing with roads")
-    tags_of_interest = ["bridge", "tunnel"]
+    wait_for_background_osm_prefetch()
+    tags_of_interest = ROADS_TAGS_OF_INTEREST
     # Need to evaluate if including bridges is better or worse
     tags_for_exclusion = set(["bridge", "tunnel"])
     # tags_for_exclusion=set(["tunnel"])
     road_layer = OSM.OSM_layer()
-    queries = [
-        'way["highway"="motorway"]',
-        'way["highway"="trunk"]',
-        'way["highway"="primary"]',
-        'way["highway"="secondary"]',
-        'way["railway"="rail"]',
-        'way["railway"="narrow_gauge"]',
-    ]
     if not OSM.OSM_queries_to_OSM_layer(
-        queries,
+        BIG_ROADS_QUERIES,
         road_layer,
         tile.lat,
         tile.lon,
@@ -287,18 +415,8 @@ def include_roads(vector_map, tile, apt_array, apt_area):
         return 0
     if tile.road_level >= 2:
         road_layer = OSM.OSM_layer()
-        queries = ['way["highway"="tertiary"]']
-        if tile.road_level >= 3:
-            queries += [
-                'way["highway"="unclassified"]',
-                'way["highway"="residential"]',
-            ]
-        if tile.road_level >= 4:
-            queries += ['way["highway"="service"]']
-        if tile.road_level >= 5:
-            queries += ['way["highway"="track"]']
         if not OSM.OSM_queries_to_OSM_layer(
-            queries,
+            small_roads_queries(tile.road_level),
             road_layer,
             tile.lat,
             tile.lon,
@@ -362,6 +480,7 @@ def include_roads(vector_map, tile, apt_array, apt_area):
 ################################################################################
 def include_sea(vector_map, tile):
     UI.vprint(0, "-> Dealing with coastline")
+    wait_for_background_osm_prefetch()
     sea_layer = OSM.OSM_layer()
     custom_source = False
     custom_coastline = FNAMES.custom_coastline(tile.lat, tile.lon)
@@ -388,14 +507,12 @@ def include_sea(vector_map, tile):
             sea_layer.write_to_file(custom_coastline)
         custom_source = True
     else:
-        queries = ['way["natural"="coastline"]']
-        tags_of_interest = []
         if not OSM.OSM_queries_to_OSM_layer(
-            queries,
+            COASTLINE_QUERIES,
             sea_layer,
             tile.lat,
             tile.lon,
-            tags_of_interest,
+            [],
             cached_suffix="coastline",
         ):
             return 0
@@ -501,6 +618,7 @@ def include_water(vector_map, tile):
             return True
 
     UI.vprint(0, "-> Dealing with inland water")
+    wait_for_background_osm_prefetch()
     water_layer = OSM.OSM_layer()
     custom_water = FNAMES.custom_water(tile.lat, tile.lon)
     custom_water_dir = FNAMES.custom_water_dir(tile.lat, tile.lon)
@@ -522,20 +640,12 @@ def include_water(vector_map, tile):
             )
             water_layer.write_to_file(custom_water)
     else:
-        queries = [
-            'rel["natural"="water"]',
-            'rel["waterway"="riverbank"]',
-            'way["natural"="water"]',
-            'way["waterway"="riverbank"]',
-            'way["waterway"="dock"]',
-        ]
-        tags_of_interest = ["name"]
         if not OSM.OSM_queries_to_OSM_layer(
-            queries,
+            WATER_QUERIES,
             water_layer,
             tile.lat,
             tile.lon,
-            tags_of_interest,
+            WATER_TAGS_OF_INTEREST,
             cached_suffix="water",
         ):
             return 0
