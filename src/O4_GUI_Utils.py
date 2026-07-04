@@ -1567,7 +1567,6 @@ class Ortho4XP_Earth_Preview(tk.Toplevel):
         if "dar" in sys.platform and sys.version_info <= (3, 12):
             self.canvas.bind("<ButtonPress-2>", self.scroll_start)
             self.canvas.bind("<B2-Motion>", self.scroll_move)
-            self.canvas.bind("<Control-ButtonPress-2>", self.delPol)
         self.canvas.bind("<ButtonPress-3>", self.scroll_start)
         self.canvas.bind("<B3-Motion>", self.scroll_move)
         self.canvas.bind("<Double-Button-1>", self.select_tile)
