@@ -3,6 +3,9 @@ import time
 import io
 import bz2
 import random
+import re
+import threading
+from concurrent.futures import ThreadPoolExecutor
 import requests
 import numpy
 from shapely import geometry, ops
@@ -13,6 +16,32 @@ from O4_Version import version as O4XP_VERSION
 # Default overpass_server_choice if not in config
 overpass_server_choice = "random"
 max_osm_tentatives = 8
+
+# Overpass QL [timeout:] setting sent with every request.  Declaring the
+# timeout explicitly lets the server scheduler plan around our patience
+# instead of assuming its default.  The HTTP read timeout is kept slightly
+# larger so a query the server is still legitimately computing is not
+# aborted client-side.
+#
+# Patience comes in two tiers (see _patience_for_attempt): a server must
+# never be told to spend more time than we are actually going to wait —
+# anything beyond that burns one of its scheduling slots computing an
+# answer nobody reads.  The first attempts stay snappy so a hung mirror
+# costs ~1 min rather than 3.5; from the third attempt on every server
+# has likely been tried once, so a still-failing query is plausibly
+# genuinely heavy and gets the full window.
+overpass_query_timeout_seconds = 180
+overpass_quick_query_timeout_seconds = 60
+http_connect_timeout_seconds = 30
+http_read_timeout_seconds = overpass_query_timeout_seconds + 30
+http_quick_read_timeout_seconds = overpass_quick_query_timeout_seconds + 15
+# Number of leading attempts served at the quick patience tier.
+quick_patience_tentatives = 2
+
+# A rate-limit penalty up to this long is sat out on the SAME server
+# rather than rotating away from it (see the 429 branch of
+# get_overpass_data).
+short_retry_after_seconds = 30
 
 
 def _load_overpass_servers() -> dict:
@@ -428,6 +457,11 @@ def OSM_queries_to_OSM_layer(
     if cached_suffix and os.path.isfile(cached_data_filename):
         UI.vprint(1, "    * Recycling OSM data from", cached_data_filename)
         return osm_layer.update_dicosm(cached_data_filename, input_tags, target_tags)
+    # Recycle per-query cached files from the pre-1.30 cache layout when
+    # present, and collect every remaining statement so they can all be
+    # downloaded in ONE batched Overpass request (see build_overpass_query
+    # for why a single union request is preferable to one per statement).
+    statements_to_download = []
     for query in queries:
         # look first for cached data (old scheme)
         if isinstance(query, str):
@@ -438,14 +472,25 @@ def OSM_queries_to_OSM_layer(
                     old_cached_data_filename, input_tags, target_tags
                 )
                 continue
-        UI.vprint(1, "    * Downloading OSM data for", query)
-        response = get_overpass_data(query, (lat, lon, lat + 1, lon + 1))
+            statements_to_download.append(query)
+        else:
+            statements_to_download.extend(query)
+    if statements_to_download:
+        UI.vprint(
+            1,
+            "    * Downloading OSM data for",
+            ", ".join(statements_to_download),
+        )
+        response = get_overpass_data(
+            statements_to_download, (lat, lon, lat + 1, lon + 1),
+            request_description=cached_suffix,
+        )
         if UI.red_flag:
             return 0
         if not response:
             UI.logprint(
                 "No valid answer for",
-                query,
+                ", ".join(statements_to_download),
                 "after",
                 max_osm_tentatives,
                 ", skipping it.",
@@ -510,89 +555,501 @@ def OSM_query_to_OSM_layer(
     return 1
 
 
-def get_overpass_data(query: str, bbox: tuple) -> bytes:
-    """Fetch data from OSM overpass servers."""
+# A single persistent HTTP session gives connection keep-alive: consecutive
+# requests to the same server reuse one TCP/TLS connection instead of paying
+# a new handshake each time, which is both faster and gentler on the public
+# Overpass servers.
+_http_session = None
+
+
+def _get_http_session() -> requests.Session:
+    global _http_session
+    if _http_session is None:
+        _http_session = requests.Session()
+        _http_session.headers.update(
+            {
+                "User-Agent": f"Ortho4XP/{O4XP_VERSION} "
+                "(https://github.com/shred86/Ortho4XP)"
+            }
+        )
+    return _http_session
+
+
+def build_overpass_query(
+    query_statements, bounding_box, query_timeout_seconds=None
+) -> str:
+    """Assemble the complete Overpass QL text for one request.
+
+    ``query_timeout_seconds`` is the value declared to the server in the
+    ``[timeout:]`` header; it defaults to overpass_query_timeout_seconds
+    and must never exceed the client read timeout the caller is going to
+    wait (see _patience_for_attempt).
+
+    ``query_statements`` is a single Overpass statement (string), e.g.
+    'way["highway"="motorway"]', or an iterable of statements.  All
+    statements are placed in one union block so the server answers them
+    in a SINGLE transaction: each request an Overpass server receives
+    costs it a scheduling slot regardless of size, so one union query is
+    much cheaper for the server (and far less likely to be rate-limited)
+    than one request per statement.  It is also less data overall: the
+    recurse-down (._;>>;) which pulls the child nodes of every matched
+    way/relation runs once over the union, so nodes shared between
+    statements (e.g. an intersection between a primary and a secondary
+    road) are only downloaded once.
+    """
+    if query_timeout_seconds is None:
+        query_timeout_seconds = overpass_query_timeout_seconds
+    if isinstance(query_statements, str):
+        query_statements = (query_statements,)
+    bounding_box_filter = str(bounding_box) if bounding_box else ""
+    union_of_statements = "".join(
+        statement + bounding_box_filter + ";" for statement in query_statements
+    )
+    return (
+        f"[out:xml][timeout:{query_timeout_seconds}];"
+        f"({union_of_statements});(._;>>;);out meta;"
+    )
+
+
+def _patience_for_attempt(tentative):
+    """Return (server-declared timeout, client read timeout) in seconds
+    for attempt number ``tentative`` of one request."""
+    if tentative <= quick_patience_tentatives:
+        return (
+            overpass_quick_query_timeout_seconds,
+            http_quick_read_timeout_seconds,
+        )
+    return (overpass_query_timeout_seconds, http_read_timeout_seconds)
+
+
+# A status probe is not worth waiting on: a server that cannot answer
+# /api/status within these bounds is of no use for a real query either.
+status_probe_connect_timeout_seconds = 3
+status_probe_read_timeout_seconds = 5
+
+
+def _parse_overpass_status_text(status_text: str) -> dict:
+    """Extract slot availability from an Overpass /api/status answer.
+
+    The status page is plain text of the form::
+
+        Connected as: 1256987296
+        Current time: 2026-07-03T23:40:01Z
+        Rate limit: 6
+        5 slots available now.
+        Slot available after: 2026-07-03T23:40:20Z, in 19 seconds.
+        Currently running queries (pid, space limit, time limit, ...):
+
+    "Rate limit: 0" means the server does not rate-limit at all.  When
+    every slot is busy the "slots available now" line is absent and only
+    "Slot available after" lines remain.
+    """
+    slots_match = re.search(r"(\d+) slots? available now", status_text)
+    slots_available_now = int(slots_match.group(1)) if slots_match else 0
+    rate_limit_match = re.search(r"Rate limit: (\d+)", status_text)
+    if rate_limit_match and int(rate_limit_match.group(1)) == 0:
+        slots_available_now = max(slots_available_now, 1)
+    slot_wait_matches = re.findall(r"in (-?\d+) seconds", status_text)
+    if slots_available_now:
+        seconds_until_next_free_slot = 0.0
+    elif slot_wait_matches:
+        seconds_until_next_free_slot = max(
+            0.0, min(float(seconds) for seconds in slot_wait_matches)
+        )
+    else:
+        seconds_until_next_free_slot = float("inf")
+    return {
+        "slots_available_now": slots_available_now,
+        "seconds_until_next_free_slot": seconds_until_next_free_slot,
+    }
+
+
+def _read_overpass_server_status(server_key: str):
+    """Probe one server's /api/status endpoint.
+
+    Returns the parsed availability report augmented with the probe's
+    round-trip time, or None when the server is unreachable or does not
+    expose a standard status endpoint.  The probe is nearly free for the
+    server, unlike a real query which costs it a scheduling slot and
+    actual computation.
+    """
+    interpreter_url = overpass_servers[server_key].rstrip("/")
+    if not interpreter_url.endswith("/interpreter"):
+        return None
+    status_url = interpreter_url.rsplit("/", 1)[0] + "/status"
+    probe_started_at = time.time()
+    try:
+        response = _get_http_session().get(
+            status_url,
+            timeout=(
+                status_probe_connect_timeout_seconds,
+                status_probe_read_timeout_seconds,
+            ),
+        )
+    except requests.RequestException:
+        return None
+    if response.status_code != 200:
+        return None
+    availability_report = _parse_overpass_status_text(response.text)
+    availability_report["probe_round_trip_seconds"] = (
+        time.time() - probe_started_at
+    )
+    return availability_report
+
+
+def _probe_server_status_in_parallel(candidate_keys) -> dict:
+    """Probe every given server's /api/status concurrently; the probes
+    are independent I/O waits, so serialising them would cost the sum of
+    the round trips instead of the slowest one."""
+    with ThreadPoolExecutor(max_workers=len(candidate_keys)) as executor:
+        return dict(
+            zip(
+                candidate_keys,
+                executor.map(_read_overpass_server_status, candidate_keys),
+            )
+        )
+
+
+def _select_most_available_server_key(candidate_keys) -> str:
+    """Probe every candidate server's status in parallel and pick the
+    most available one: a server with a free slot for our IP (fastest
+    probe answer wins), else the one whose next slot frees up soonest.
+    Falls back to a random pick when no candidate answers its probe.
+    """
+    candidate_keys = list(candidate_keys)
+    availability_by_key = _probe_server_status_in_parallel(candidate_keys)
+    # /api/status transiently answers 504 or times out on servers that
+    # are perfectly able to serve queries, and a single silent probe
+    # would otherwise demote such a server all the way to the random
+    # fallback below.  Re-probing just the silent ones usually gets an
+    # answer a second later, and costs nothing on the answering ones.
+    unanswered_keys = [
+        key for key, report in availability_by_key.items() if report is None
+    ]
+    if unanswered_keys:
+        availability_by_key.update(
+            _probe_server_status_in_parallel(unanswered_keys)
+        )
+    UI.vprint(
+        2,
+        "      OSM server availability:",
+        ", ".join(
+            f"{key}: "
+            + (
+                f"{report['slots_available_now']} slot(s) now "
+                f"({report['probe_round_trip_seconds']:.2f}s)"
+                if report and report["slots_available_now"]
+                else f"next slot in {report['seconds_until_next_free_slot']:.0f}s"
+                if report
+                else "no status answer"
+            )
+            for key, report in availability_by_key.items()
+        ),
+    )
+    keys_with_free_slot = [
+        key
+        for key, report in availability_by_key.items()
+        if report and report["slots_available_now"]
+    ]
+    if keys_with_free_slot:
+        return min(
+            keys_with_free_slot,
+            key=lambda key: availability_by_key[key][
+                "probe_round_trip_seconds"
+            ],
+        )
+    reachable_keys = [
+        key for key, report in availability_by_key.items() if report
+    ]
+    if reachable_keys:
+        return min(
+            reachable_keys,
+            key=lambda key: availability_by_key[key][
+                "seconds_until_next_free_slot"
+            ],
+        )
+    return random.choice(list(candidate_keys))
+
+
+def _select_overpass_server_key(
+    server_keys, failed_server_keys=frozenset()
+) -> str:
+    """Choose which Overpass server the next request attempt goes to.
+
+    A pinned choice (overpass_server_choice naming an entry from
+    overpass_servers.txt) is always honoured.  In "random" mode the
+    selection is sticky: keep using the server that last answered
+    successfully — stickiness preserves the HTTP keep-alive connection
+    and the server-side rate-limit slot we already hold.  Only when
+    there is no proven-good server (first download of the session, or
+    right after a failed attempt) are the candidates' status endpoints
+    probed to find the most available one.
+
+    ``failed_server_keys`` holds every server that already failed for
+    the current request; none of them is picked again while an untried
+    server remains, because a status probe can report a server as
+    available even when it answers requests with garbage or timeouts.
+    """
+    if overpass_server_choice in server_keys:
+        return overpass_server_choice
+    sticky_server_key = getattr(
+        get_overpass_data, "last_successful_server_key", None
+    )
+    candidate_keys = [
+        key for key in server_keys if key not in failed_server_keys
+    ]
+    if not candidate_keys:
+        candidate_keys = list(server_keys)
+    if sticky_server_key in candidate_keys:
+        return sticky_server_key
+    if len(candidate_keys) == 1:
+        return candidate_keys[0]
+    return _select_most_available_server_key(candidate_keys)
+
+
+def _describe_overpass_response_problem(response):
+    """Return a short description of what is wrong with an Overpass
+    answer, or None when the answer is complete and usable."""
+    if response.status_code != 200:
+        return f"rejected our query (HTTP {response.status_code})"
+    content = response.content
+    if b"</osm>" not in content[-10:] and b"</OSM>" not in content[-10:]:
+        return "sent a corrupted answer (no closing </osm> tag in answer)"
+    if len(content) <= 1000 and b"error" in content:
+        return "sent us an error code (data too big ?)"
+    # A syntactically complete answer may still carry a <remark> trailer
+    # when the server had to abort the query midway (runtime timeout,
+    # memory exhaustion); accepting it would silently truncate the data.
+    response_tail = content[-2048:]
+    if b"<remark" in response_tail and (
+        b"error" in response_tail or b"timed out" in response_tail
+    ):
+        return "aborted the query server-side (runtime timeout ?)"
+    return None
+
+
+# How often to reassure the user that a slow request is still alive.
+progress_update_interval_seconds = 10
+
+
+def _post_overpass_query_reporting_progress(server_key, overpass_query,
+                                            request_label="",
+                                            read_timeout_seconds=None):
+    """Send one Overpass request, reporting progress while it runs.
+
+    ``read_timeout_seconds`` is how long the answer may take to start
+    arriving; it defaults to http_read_timeout_seconds and is expected to
+    match the ``[timeout:]`` the query declares to the server.
+
+    The HTTP POST itself happens in a helper thread so this thread can
+    print a reassurance line every few seconds — a busy server may
+    legitimately spend minutes computing before the first byte arrives,
+    and a silent console reads as a crash — and honour the GUI stop
+    button mid-request.  Returns the requests.Response, or None when
+    the user interrupted the wait (the helper thread is then abandoned;
+    it ends on its own once the server answers or the timeout fires).
+    Network failures raise requests.RequestException exactly as a
+    direct requests call would.
+    """
+    if read_timeout_seconds is None:
+        read_timeout_seconds = http_read_timeout_seconds
+    request_outcome = {}
+
+    def send_request():
+        try:
+            # POST keeps the query out of the URL: no length limit and
+            # no characters for intermediaries to mangle, as recommended
+            # by the Overpass API documentation for generated queries.
+            request_outcome["response"] = _get_http_session().post(
+                overpass_servers[server_key],
+                data={"data": overpass_query},
+                timeout=(
+                    http_connect_timeout_seconds,
+                    read_timeout_seconds,
+                ),
+            )
+        except Exception as request_error:
+            request_outcome["error"] = request_error
+
+    request_thread = threading.Thread(target=send_request, daemon=True)
+    request_thread.start()
+    seconds_waited = 0
+    while True:
+        request_thread.join(timeout=progress_update_interval_seconds)
+        if not request_thread.is_alive():
+            break
+        seconds_waited += progress_update_interval_seconds
+        if UI.red_flag:
+            return None
+        UI.vprint(
+            1,
+            f"      OSM server {server_key}{request_label} is working on "
+            f"our request ({seconds_waited}s), waiting for the answer...",
+        )
+    if "error" in request_outcome:
+        raise request_outcome["error"]
+    return request_outcome["response"]
+
+
+def get_overpass_data(query, bbox, request_description="") -> bytes:
+    """Fetch data for one or more Overpass statements in one transaction.
+
+    ``query`` is a single Overpass statement or an iterable of statements;
+    every statement is combined into one union request by
+    build_overpass_query, so callers should pass ALL the statements they
+    need at once rather than calling this once per statement.  Returns the
+    raw XML answer as bytes, or 0 after max_osm_tentatives failures.
+
+    ``request_description`` (e.g. the layer name "big_roads") is woven
+    into every console line about this request, so that when several
+    downloads interleave in the log — the background prefetch runs while
+    other work prints — each line is attributable to its request.
+    """
     if not overpass_servers:
         UI.lvprint(1, "No overpass servers configured. Check overpass_servers.txt.")
         return 0
-    s = requests.Session()
-    s.headers.update(
-        {"User-Agent": f"Ortho4XP/{O4XP_VERSION} (https://github.com/shred86/Ortho4XP)"}
-    )
     server_keys = list(overpass_servers.keys())
-
-    if isinstance(query, str):
-        overpass_query = query + str(bbox) + ";"
-    else:
-        overpass_query = "".join(x + str(bbox) + ";" for x in query)
-
-    for tentative in range(1, max_osm_tentatives + 1):
-        if overpass_server_choice == "random":
-            if len(server_keys) == 1:
-                current_key = server_keys[0]
-            else:
-                last_used = getattr(get_overpass_data, "last_key", None)
-                other_keys = [k for k in server_keys if k != last_used]
-                current_key = random.choice(other_keys if other_keys else server_keys)
-        elif overpass_server_choice in server_keys:
-            current_key = overpass_server_choice
-        else:
-            current_key = server_keys[0]
-            UI.lvprint(
-                1,
-                "Selected overpass server not found in overpass_servers.txt, using:",
-                server_keys[0],
-            )
-
-        get_overpass_data.last_key = current_key
-
-        UI.vprint(2, f"      Using OSM server {current_key}")
-        url = (
-            overpass_servers[current_key]
-            + "?data=("
-            + overpass_query
-            + ");(._;>>;);out meta;"
+    if (
+        overpass_server_choice != "random"
+        and overpass_server_choice not in server_keys
+    ):
+        UI.lvprint(
+            1,
+            "Selected overpass server not found in overpass_servers.txt, using:",
+            server_keys[0],
         )
-        UI.vprint(3, url)
-        wait = 2**tentative
+    request_label = f" ({request_description})" if request_description else ""
+    failed_server_keys = set()
+    for tentative in range(1, max_osm_tentatives + 1):
+        if len(failed_server_keys) >= len(server_keys):
+            # Every server failed once this round; start a fresh round
+            # rather than keeping a dead exclusion list around.
+            failed_server_keys.clear()
+        current_server_key = _select_overpass_server_key(
+            server_keys, failed_server_keys
+        )
+        # The declared [timeout:] and the client read timeout are one
+        # decision, so the query text is rebuilt per attempt.
+        query_timeout_seconds, read_timeout_seconds = _patience_for_attempt(
+            tentative
+        )
+        overpass_query = build_overpass_query(
+            query, bbox, query_timeout_seconds
+        )
+        # Announce the attempt BEFORE sending it: a busy server can hold
+        # the connection open for minutes before failing, and without
+        # this line the console would show no sign of life until then.
+        UI.vprint(
+            1,
+            f"      Querying OSM server {current_server_key}{request_label} "
+            f"(attempt {tentative}/{max_osm_tentatives})...",
+        )
+        UI.vprint(3, overpass_query)
+        wait_seconds = 2**tentative
+        rotate_to_another_server = True
         try:
-            r = s.get(url, timeout=60)
-            if r.status_code == 200:
-                if (
-                    b"</osm>" not in r.content[-10:]
-                    and b"</OSM>" not in r.content[-10:]
-                ):
-                    UI.vprint(
-                        1,
-                        f"      OSM server {current_key} sent a corrupted answer ",
-                        f"(no closing </osm> tag in answer), "
-                        f"new tentative in {wait} sec...",
+            response = _post_overpass_query_reporting_progress(
+                current_server_key, overpass_query, request_label,
+                read_timeout_seconds,
+            )
+            if response is None:
+                # The user interrupted the build while we were waiting.
+                return 0
+            problem_description = _describe_overpass_response_problem(response)
+            if problem_description is None:
+                get_overpass_data.last_successful_server_key = current_server_key
+                return response.content
+            if response.status_code == 429:
+                # 429 is the overpass software rate limiting us; it tells
+                # us in the Retry-After header how long to back off.  The
+                # header may also be an HTTP-date (or absent), so parse
+                # defensively.
+                try:
+                    retry_after_seconds = int(
+                        response.headers.get("Retry-After", 0)
                     )
-                elif len(r.content) <= 1000 and b"error" in r.content:
-                    UI.vprint(
-                        1,
-                        f"      OSM server {current_key} sent us an error code "
-                        f"(data too big ?), new tentative in {wait} sec...",
+                except (TypeError, ValueError):
+                    retry_after_seconds = 0
+                retry_after_from_status_probe = False
+                if retry_after_seconds <= 0:
+                    # FOSSGIS answers 429 with no Retry-After at all.
+                    # The server just proved it is alive and reachable by
+                    # answering, so ask its status endpoint when our next
+                    # slot frees instead of guessing from the backoff.
+                    status_report = _read_overpass_server_status(
+                        current_server_key
                     )
-                else:
-                    return r.content
-            else:
-                if r.status_code == 429:  # 429 is overpass software rate limiting us
-                    wait = max(int(r.headers.get("Retry-After", 0)), wait)
+                    if status_report:
+                        seconds_until_slot = status_report[
+                            "seconds_until_next_free_slot"
+                        ]
+                        if 0 < seconds_until_slot < float("inf"):
+                            retry_after_seconds = int(seconds_until_slot)
+                            retry_after_from_status_probe = True
+                if 0 < retry_after_seconds <= short_retry_after_seconds:
+                    # A short penalty on the server that just answered us
+                    # is worth sitting out: it is typically the fastest
+                    # mirror momentarily rate-limiting us, and rotating
+                    # trades a few seconds for a possibly much slower
+                    # server.  Staying means NOT recording it as failed
+                    # and NOT dropping the stickiness that brings the
+                    # next attempt back here.
+                    wait_seconds = max(retry_after_seconds, 2)
+                    rotate_to_another_server = False
+                elif not retry_after_from_status_probe:
+                    # Cap the honoured value: the next attempt rotates to
+                    # a DIFFERENT server, so serving one server's full
+                    # rate-limit penalty would stall the build for
+                    # nothing.  A probe-derived slot time is discarded
+                    # outright here: it binds only a wait we spend ON
+                    # that server, never the wait before rotating away
+                    # from it, so a long slot time leaves the plain
+                    # exponential backoff in place.
+                    wait_seconds = max(
+                        min(retry_after_seconds, 120), wait_seconds
+                    )
+            if rotate_to_another_server:
                 UI.vprint(
                     1,
-                    f"      OSM server {current_key} rejected our query "
-                    f"(HTTP {r.status_code}), new tentative in {wait} sec...",
+                    f"      OSM server {current_server_key}{request_label} "
+                    f"{problem_description}, "
+                    f"new tentative in {wait_seconds} sec...",
                 )
-        except Exception:
+            else:
+                UI.vprint(
+                    1,
+                    f"      OSM server {current_server_key}{request_label} "
+                    f"rate-limited (HTTP 429), "
+                    + (
+                        f"slot frees in {retry_after_seconds} sec, "
+                        if retry_after_from_status_probe
+                        else ""
+                    )
+                    + f"same server again in {wait_seconds} sec...",
+                )
+        except requests.RequestException:
             UI.vprint(
                 1,
-                f"      OSM server {current_key} was too busy, new tentative in ",
-                f"{wait} sec...",
+                f"      OSM server {current_server_key}{request_label} "
+                f"was too busy, new tentative in {wait_seconds} sec...",
             )
-        if UI.red_flag:
-            return 0
-        time.sleep(wait)
+        if rotate_to_another_server:
+            failed_server_keys.add(current_server_key)
+            # Stickiness is a claim that this server answers well; the
+            # failure just refuted it.  Without this, the FIRST attempt
+            # of every LATER request would go straight back to a server
+            # whose previous request timed out.  It is re-earned by a
+            # success.
+            if current_server_key == getattr(
+                get_overpass_data, "last_successful_server_key", None
+            ):
+                get_overpass_data.last_successful_server_key = None
+        # Sleep in one-second slices so the GUI stop button stays
+        # responsive during a long backoff wait.
+        for _ in range(wait_seconds):
+            if UI.red_flag:
+                return 0
+            time.sleep(1)
     return 0
 
 
