@@ -11,7 +11,7 @@ call venv\Scripts\activate.bat
 echo:
 
 echo Installing Python dependency: gdal
-pip install Utils\win\gdal-3.11.1-cp313-cp313-win_amd64.whl
+pip install Utils\win\gdal-3.12.2-cp313-cp313-win_amd64.whl
 echo:
 
 echo Installing Python dependency: scikit-fmm
